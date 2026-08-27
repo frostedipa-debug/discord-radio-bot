@@ -209,6 +209,8 @@
 const $ = (id) => document.getElementById(id);
 let state = null;
 let dragging = false;
+let localPos = 0;
+let localTick = null;
 
 function fmt(s) {
   if (s == null || isNaN(s)) return "--:--";
@@ -222,6 +224,14 @@ async function api(path, opts) {
     const r = await fetch(path, opts);
     return await r.json();
   } catch (e) { return null; }
+}
+
+function paintSeek() {
+  const seek = $("seek");
+  const max = seek.max;
+  seek.value = localPos;
+  $("timeCur").textContent = fmt(localPos);
+  seek.style.setProperty("--fill", ((parseFloat(max) || 1000) ? (localPos / (parseFloat(max) || 1000)) * 100 : 0) + "%");
 }
 
 function render(next) {
@@ -249,13 +259,23 @@ function render(next) {
   $("btnShuffle").classList.toggle("active", !!s.shuffle);
 
   const dur = s.duration || 0;
-  $("timeCur").textContent = fmt(s.position);
   $("timeDur").textContent = fmt(dur);
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
-  const pos = dur > 0 ? Math.min(s.position, dur) : 0;
-  if (!dragging) seek.value = pos;
-  seek.style.setProperty("--fill", (dur > 0 ? (pos / dur) * 100 : 0) + "%");
+  localPos = dur > 0 ? Math.min(s.position, dur) : 0;
+  const playing = !!s.playing;
+  if (playing && !localTick) {
+    localTick = setInterval(() => {
+      if (dragging) return;
+      if (s.playing && s.status !== "Paused") {
+        localPos = Math.min(localPos + 1, s.duration || localPos + 1);
+        paintSeek();
+      }
+    }, 1000);
+  } else if (!playing && localTick) {
+    clearInterval(localTick); localTick = null;
+  }
+  if (!dragging) paintSeek();
 
   // Playlist select
   const ps = $("playlistSelect");

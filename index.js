@@ -442,7 +442,7 @@ player.on(AudioPlayerStatus.Idle, () => {
     stopPositionTimer();
     return;
   }
-  if (manualAction) { manualAction = false; resetTrackState(); return; }
+  if (manualAction) { manualAction = false; return; }
   if (isStopped) { resetTrackState(); return; }
   resetTrackState();
   if (isStopped) { return; }
