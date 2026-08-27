@@ -209,11 +209,10 @@
 const $ = (id) => document.getElementById(id);
 let state = null;
 let dragging = false;
-let basePos = 0;
-let baseTime = 0;
-let knownDur = 0;
-let lastTrackKey = null;
-let wasPlaying = false;
+let fakeBase = 0;
+let fakeTime = 0;
+let fakeDur = 0;
+let prevTrackKey = "";
 
 function fmt(s) {
   if (s == null || isNaN(s)) return "--:--";
@@ -230,13 +229,11 @@ async function api(path, opts) {
 }
 
 function currentPos() {
-  const playing = !!(state && state.playing && state.status !== "Paused");
-  let p = basePos;
-  if (playing) {
-    p += (Date.now() - baseTime) / 1000;
-    if (knownDur > 1) p = Math.min(p, knownDur);
-  }
-  return Math.max(0, p);
+  const playing = state && state.playing && state.status !== "Paused";
+  if (!playing) return fakeBase;
+  const elapsed = (Date.now() - fakeTime) / 1000;
+  const max = fakeDur > 1 ? fakeDur : 999999;
+  return Math.min(fakeBase + elapsed, max);
 }
 
 function paintSeek() {
@@ -245,7 +242,7 @@ function paintSeek() {
   const pos = Math.min(currentPos(), max);
   seek.value = pos;
   $("timeCur").textContent = fmt(pos);
-  seek.style.setProperty("--fill", (max ? (pos / max) * 100 : 0) + "%");
+  seek.style.setProperty("--fill", ((pos / max) * 100) + "%");
 }
 
 function paintLoop() {
@@ -277,27 +274,21 @@ function render(next) {
   $("btnShuffle").classList.toggle("active", !!s.shuffle);
 
   const dur = s.duration || 0;
-  knownDur = dur;
+  fakeDur = dur;
   $("timeDur").textContent = fmt(dur);
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
 
-  // Fake smooth progress: grow 1s per 1s while playing.
-  // Rebase only on track change, or when (re)starting/pausing, not each poll.
   const trackKey = (s.currentTrack || "") + "|" + (s.trackIndex || 0);
-  const playingNow = !!(s.playing && s.status !== "Paused");
-  if (trackKey !== lastTrackKey) {
-    lastTrackKey = trackKey;
-    basePos = dur > 0 ? Math.min(s.position, dur) : 0;
-    baseTime = Date.now();
-  } else if (playingNow && !wasPlaying) {
-    baseTime = Date.now();
-  } else if (!playingNow && wasPlaying) {
-    basePos = dur > 0 ? Math.min(s.position, dur) : basePos;
-    baseTime = Date.now();
+  const serverPos = dur > 0 ? Math.min(s.position || 0, dur) : (s.position || 0);
+  const drift = Math.abs(serverPos - currentPos());
+
+  if (trackKey !== prevTrackKey || drift > 3) {
+    fakeBase = serverPos;
+    fakeTime = Date.now();
   }
-  wasPlaying = playingNow;
-  paintSeek();
+  prevTrackKey = trackKey;
+  if (!dragging) paintSeek();
 
   // Playlist select
   const ps = $("playlistSelect");
@@ -379,8 +370,10 @@ $("seek").addEventListener("input", () => {
   $("seek").style.setProperty("--fill", (parseFloat(v) / (parseFloat(max) || 1000)) * 100 + "%");
 });
 $("seek").addEventListener("change", () => {
-  const v = $("seek").value;
+  const v = parseFloat($("seek").value);
   dragging = false;
+  fakeBase = v;
+  fakeTime = Date.now();
   api("/api/seek?t=" + v).then(render);
 });
 $("seek").addEventListener("blur", () => { dragging = false; });
