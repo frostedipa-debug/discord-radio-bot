@@ -37,7 +37,15 @@ http
   })
   .listen(PORT, () => console.log(`[web] keep-alive server on port ${PORT}`));
 
-const { token } = require("./config.json");
+function getConfig() {
+  try {
+    return require("./config.json");
+  } catch {
+    return {};
+  }
+}
+const cfg = getConfig();
+const token = process.env.TOKEN || cfg.token;
 const VOICE_CHANNEL_ID = "1486400056759292126";
 const PLAYLISTS_DIR = path.join(__dirname, "playlists");
 const DEFAULT_PLAYLIST = "default";
@@ -77,14 +85,17 @@ function listPlaylists() {
 }
 
 function createMediaResource(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === ".mp3" || ext === ".ogg" || ext === ".wav") {
-    return createAudioResource(filePath);
-  }
   const ffmpeg = spawn(process.env.FFMPEG_PATH, [
-    "-i", filePath, "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1",
+    "-i", filePath,
+    "-f", "ogg",
+    "-c:a", "libopus",
+    "-ar", "48000",
+    "-ac", "2",
+    "-b:a", "128k",
+    "-vn",
+    "pipe:1",
   ], { stdio: ["ignore", "pipe", "ignore"] });
-  return createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw });
+  return createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus });
 }
 
 function playTrack() {
