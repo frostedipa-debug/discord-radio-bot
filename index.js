@@ -23,10 +23,19 @@ const {
   StreamType,
 } = require("@discordjs/voice");
 const { spawn } = require("child_process");
+const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
 process.env.FFMPEG_PATH = require("ffmpeg-static");
+
+const PORT = process.env.PORT || 3000;
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, uptime: process.uptime().toFixed(0) }));
+  })
+  .listen(PORT, () => console.log(`[web] keep-alive server on port ${PORT}`));
 
 const { token } = require("./config.json");
 const VOICE_CHANNEL_ID = "1486400056759292126";
