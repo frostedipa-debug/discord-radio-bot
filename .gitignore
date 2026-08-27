@@ -1,0 +1,14 @@
+node_modules/
+config.json
+
+# Media files (too large for GitHub)
+*.mp3
+*.mp4
+*.mkv
+*.webm
+*.ogg
+*.wav
+
+# Keep empty playlist folders
+!playlists/.gitkeep
+!playlist/.gitkeep
