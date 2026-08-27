@@ -1,6 +1,9 @@
 node_modules/
 config.json
 
+# BetterDiscord plugins (kept local only)
+*.plugin.js
+
 # Media files (too large for GitHub)
 *.mp3
 *.mp4
