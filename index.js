@@ -367,7 +367,7 @@ function startPositionTimer() {
   stopPositionTimer();
   currentPosition = seekPos || 0;
   positionTimer = setInterval(() => {
-    if (isPlaying && !isStopped && player && player.state.status === AudioPlayerStatus.Playing) {
+    if (isPlaying && !isStopped) {
       currentPosition += 1;
     }
   }, 1000);
