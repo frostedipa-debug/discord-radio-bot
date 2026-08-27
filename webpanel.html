@@ -84,6 +84,12 @@
   .btn.util.active { color: var(--accent); border-color: var(--accent); background: rgba(29,185,84,.12); }
   h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 22px 0 10px; }
   .selects { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .newplaylist { display: flex; gap: 8px; margin-bottom: 14px; }
+  .newplaylist input {
+    flex: 1; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 14px; outline: none;
+  }
+  .newplaylist input:focus { border-color: var(--accent); }
   select {
     background: var(--panel2); color: var(--text); border: 1px solid var(--border);
     border-radius: 10px; padding: 10px 12px; font-size: 14px; flex: 1; min-width: 0; cursor: pointer;
@@ -165,6 +171,12 @@
   <h3>Playlist &amp; Tracks</h3>
   <div class="selects">
     <select id="playlistSelect" title="Playlist"></select>
+  </div>
+  <div class="newplaylist">
+    <input type="text" id="newPlaylistName" placeholder="New playlist name">
+    <button class="btn util" id="btnNewPlaylist" title="Create playlist">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
   </div>
   <ul class="tracklist" id="tracklist"></ul>
 
@@ -272,10 +284,14 @@ async function refresh() {
 
 const btnPlay = $("btnPlay");
 function playToggle() {
-  // If connected, toggle play/pause; else join & play
   if (state && state.connected) {
-    const paused = (state.status === "Paused") || (!state.playing && !state.stopped);
-    api(paused ? "/api/resume" : "/api/pause").then(render);
+    if (state.playing) {
+      api("/api/pause").then(render);
+    } else if (state.stopped) {
+      api("/api/play").then(render);
+    } else {
+      api("/api/resume").then(render);
+    }
   } else {
     api("/api/play").then(render);
   }
@@ -311,6 +327,15 @@ $("seek").addEventListener("blur", () => { dragging = false; });
 
 $("playlistSelect").addEventListener("change", () => {
   api("/api/playlist?name=" + encodeURIComponent($("playlistSelect").value)).then(render);
+});
+
+$("btnNewPlaylist").addEventListener("click", () => {
+  const name = $("newPlaylistName").value.trim();
+  if (!name) return;
+  api("/api/createplaylist?name=" + encodeURIComponent(name)).then((res) => {
+    $("newPlaylistName").value = "";
+    refresh();
+  });
 });
 
 // Upload via drag & drop or click

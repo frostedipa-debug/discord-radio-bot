@@ -124,7 +124,7 @@ http.createServer(async (req, res) => {
   if (url === "/api/play") { ensurePlay(); return serveJSON(res, getState()); }
   if (url === "/api/pause") { if (player && player.state.status === AudioPlayerStatus.Playing) { player.pause(); isPlaying = false; } return serveJSON(res, getState()); }
   if (url === "/api/resume") { if (player && player.state.status === AudioPlayerStatus.Paused) { player.unpause(); isPlaying = true; isStopped = false; } return serveJSON(res, getState()); }
-  if (url === "/api/stop") { if (player) { manualAction = true; player.stop(); isPlaying = false; isStopped = true; } return serveJSON(res, getState()); }
+  if (url === "/api/stop") { if (player && !isStopped) { keepPosOnStop = true; seekPos = currentPosition; manualAction = true; player.stop(); isPlaying = false; isStopped = true; } return serveJSON(res, getState()); }
   if (url === "/api/skip") { if (connection && playlist.length > 0) { manualAction = true; player.stop(); currentIndex++; if (currentIndex >= playlist.length) currentIndex = 0; resetTrackState(); playTrack(); } return serveJSON(res, getState()); }
   if (url === "/api/prev") { if (connection && playlist.length > 0) { manualAction = true; player.stop(); currentIndex -= 2; if (currentIndex < -1) currentIndex = playlist.length - 2; resetTrackState(); playTrack(); } return serveJSON(res, getState()); }
   if (url === "/api/loop") { loopEnabled = !loopEnabled; return serveJSON(res, getState()); }
@@ -152,6 +152,15 @@ http.createServer(async (req, res) => {
     if (!connection) return serveStatus(res, 400, "Not connected. Press play first.");
     manualAction = true; player.stop(); currentIndex = idx; resetTrackState(); playTrack();
     return serveJSON(res, getState());
+  }
+
+  if (url === "/api/createplaylist") {
+    const name = (u.searchParams.get("name") || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!name) return serveStatus(res, 400, "Invalid name");
+    const dir = getPlaylistDir(name);
+    if (fs.existsSync(dir)) return serveStatus(res, 400, "Playlist already exists");
+    fs.mkdirSync(dir, { recursive: true });
+    return serveJSON(res, { ok: true, message: `Created playlist "${name}"`, playlists: listPlaylists() });
   }
 
   if (url === "/api/playlist") {
@@ -207,7 +216,7 @@ function ensurePlay() {
   };
   if (connection) {
     if (player.state.status === AudioPlayerStatus.Paused) { player.unpause(); isPlaying = true; isStopped = false; }
-    else if (player.state.status === AudioPlayerStatus.Idle && playlist.length > 0) { isStopped = false; resetTrackState(); playTrack(); }
+    else if (player.state.status === AudioPlayerStatus.Idle && playlist.length > 0) { isStopped = false; playTrack(); }
     else if (playlist.length === 0) { playlist = loadPlaylist(); }
     return;
   }
@@ -287,6 +296,7 @@ let isStopped = false;
 let manualAction = false;
 let loopEnabled = false;
 let shuffleEnabled = false;
+let keepPosOnStop = false;
 let currentPlaylistName = DEFAULT_PLAYLIST;
 let seekPos = 0;
 let trackDuration = null;
@@ -411,6 +421,11 @@ player.on(AudioPlayerStatus.Playing, () => console.log("[PLAYER] PLAYING"));
 
 player.on(AudioPlayerStatus.Idle, () => {
   console.log("[PLAYER] IDLE");
+  if (keepPosOnStop) {
+    keepPosOnStop = false;
+    stopPositionTimer();
+    return;
+  }
   if (manualAction) { manualAction = false; resetTrackState(); return; }
   if (isStopped) { resetTrackState(); return; }
   resetTrackState();
@@ -598,7 +613,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         isStopped = false;
       } else if (player.state.status === AudioPlayerStatus.Idle && playlist.length > 0) {
         isStopped = false;
-        resetTrackState();
         playTrack();
       }
       return updatePanel(interaction);
