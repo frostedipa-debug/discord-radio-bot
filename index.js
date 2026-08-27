@@ -46,6 +46,7 @@ function getConfig() {
 }
 const cfg = getConfig();
 const token = process.env.TOKEN || cfg.token;
+console.log("[debug] TOKEN from env:", process.env.TOKEN ? "set (len " + process.env.TOKEN.length + ")" : "NOT SET", "| from config:", cfg.token ? "set (len " + cfg.token.length + ")" : "NOT SET");
 const VOICE_CHANNEL_ID = "1486400056759292126";
 const PLAYLISTS_DIR = path.join(__dirname, "playlists");
 const DEFAULT_PLAYLIST = "default";
