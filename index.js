@@ -799,9 +799,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!fs.existsSync(dir)) return interaction.reply({ content: `Playlist "${target}" does not exist.`, flags: 64 });
     await interaction.deferReply({ flags: 64 });
     try {
-      const res = await fetch(url);
+      let dlUrl = url;
+      const gdMatch = url.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)/);
+      if (gdMatch) dlUrl = `https://drive.google.com/uc?export=download&id=${gdMatch[1]}`;
+      const res = await fetch(dlUrl, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0" } });
       if (!res.ok) return interaction.editReply("Failed to download: HTTP " + res.status);
       const contentType = res.headers.get("content-type") || "";
+      let buffer = Buffer.from(await res.arrayBuffer());
+      if (gdMatch && contentType.includes("text/html")) {
+        const html = buffer.toString();
+        const m = html.match(/href="(\/uc\?export=download[^"]*confirm=[^"]*)"/) || html.match(/href="(\/uc\?[^"]*confirm=[^"]*)"/);
+        if (m) {
+          const confirmUrl = "https://drive.google.com" + m[1].replace(/&amp;/g, "&");
+          const res2 = await fetch(confirmUrl, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0" } });
+          if (res2.ok) buffer = Buffer.from(await res2.arrayBuffer());
+        }
+      }
       let ext = ".mp3";
       const urlPath = new URL(url).pathname;
       const urlExt = path.extname(urlPath).toLowerCase();
@@ -814,7 +827,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       } else if (contentType.includes("wav")) {
         ext = ".wav";
       }
-      const buffer = Buffer.from(await res.arrayBuffer());
       const name = path.basename(urlPath).replace(/[^a-zA-Z0-9._-]/g, "_").substring(0, 100) || "track";
       const filename = name.includes(".") ? name : name + ext;
       fs.writeFileSync(path.join(dir, filename), buffer);
