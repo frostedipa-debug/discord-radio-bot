@@ -30,8 +30,12 @@
   .badge {
     font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600;
     background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    cursor: pointer; transition: transform .08s, filter .15s; user-select: none;
   }
+  .badge:hover { filter: brightness(1.15); }
+  .badge:active { transform: scale(.94); }
   .badge.on { color: #0f1117; background: var(--accent); border-color: var(--accent); }
+  .badge.on:hover { background: var(--accent-dim); }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
   .now {
     display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px;
@@ -48,7 +52,8 @@
   .prog { margin: 6px 0 4px; }
   input[type=range] {
     width: 100%; appearance: none; -webkit-appearance: none; height: 6px;
-    border-radius: 4px; background: var(--panel2); outline: none; margin: 0;
+    border-radius: 4px; outline: none; margin: 0; cursor: pointer;
+    background: linear-gradient(to right, var(--accent) var(--fill,0%), var(--panel2) var(--fill,0%));
   }
   input[type=range]::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%;
@@ -59,22 +64,24 @@
     cursor: pointer; border: none;
   }
   .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
-  .controls { display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .controls { display: flex; justify-content: center; gap: 10px; margin-top: 12px; }
   .btn {
     border: none; cursor: pointer; border-radius: 12px;
-    width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center;
+    width: 52px; height: 52px; display: inline-flex; align-items: center; justify-content: center;
     background: var(--panel2); color: var(--text); transition: transform .08s, background .15s, opacity .15s;
   }
   .btn:hover { background: #262c3c; }
   .btn:active { transform: scale(.92); }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn.wide { width: auto; padding: 0 14px; gap: 6px; font-size: 13px; font-weight: 600; }
-  .btn svg { width: 22px; height: 22px; }
-  .btn.wide svg { width: 17px; height: 17px; }
-  .btn.primary { background: var(--accent); color: #0f1117; }
+  .btn svg { width: 24px; height: 24px; }
+  .btn.primary { background: var(--accent); color: #0f1117; width: 62px; height: 62px; }
   .btn.primary:hover { background: var(--accent-dim); }
-  .btn.danger { background: var(--danger); color: #fff; }
-  .seek-row { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+  .btn.primary svg { width: 30px; height: 30px; }
+  .util-row { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+  .btn.util { width: 40px; height: 40px; background: transparent; border: 1px solid var(--border); }
+  .btn.util svg { width: 18px; height: 18px; }
+  .btn.util:hover { background: var(--panel2); }
+  .btn.util.active { color: var(--accent); border-color: var(--accent); background: rgba(29,185,84,.12); }
   h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 22px 0 10px; }
   .selects { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
   select {
@@ -110,7 +117,7 @@
       </svg>
       Radio Panel
     </h1>
-    <span class="badge" id="connBadge">Connecting...</span>
+    <span class="badge" id="connBadge" title="Click to join / leave voice channel">Connecting...</span>
   </header>
 
   <div class="panel">
@@ -138,28 +145,20 @@
       <button class="btn" id="btnPrev" title="Previous track">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
       </button>
-      <button class="btn" id="btnStop" title="Stop">
-        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-      </button>
-      <button class="btn primary" id="btnPlay" title="Play">
+      <button class="btn primary" id="btnPlay" title="Play / Pause">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-      </button>
-      <button class="btn" id="btnPause" title="Pause">
-        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
       </button>
       <button class="btn" id="btnNext" title="Next track">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
       </button>
-      <button class="btn" id="btnLoop" title="Toggle loop" style="display:none">
+    </div>
+    <div class="util-row">
+      <button class="btn util" id="btnLoop" title="Toggle repeat">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
       </button>
-    </div>
-
-    <div class="seek-row">
-      <button class="btn wide" id="btnBack60">-60s</button>
-      <button class="btn wide" id="btnBack15">-15s</button>
-      <button class="btn wide" id="btnFwd15">+15s</button>
-      <button class="btn wide" id="btnFwd60">+60s</button>
+      <button class="btn util" id="btnShuffle" title="Toggle shuffle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+      </button>
     </div>
   </div>
 
@@ -208,12 +207,26 @@ function render(next) {
   $("trackName").textContent = s.currentTrack || "No track";
   $("playlistLabel").textContent = "Playlist: " + s.playlist;
 
+  // Play/Pause button icon
+  const btnPlay = $("btnPlay");
+  const isPaused = s.playing === false && s.connected;
+  btnPlay.innerHTML = isPaused || (s.status === "Paused")
+    ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+  btnPlay.title = (s.playing || s.status === "Paused") ? "Pause" : "Play";
+
+  // Loop / Shuffle highlight
+  $("btnLoop").classList.toggle("active", !!s.loop);
+  $("btnShuffle").classList.toggle("active", !!s.shuffle);
+
   const dur = s.duration || 0;
   $("timeCur").textContent = fmt(s.position);
   $("timeDur").textContent = fmt(dur);
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
-  if (!dragging) seek.value = dur > 0 ? Math.min(s.position, dur) : 0;
+  const pos = dur > 0 ? Math.min(s.position, dur) : 0;
+  if (!dragging) seek.value = pos;
+  seek.style.setProperty("--fill", (dur > 0 ? (pos / dur) * 100 : 0) + "%");
 
   // Playlist select
   const ps = $("playlistSelect");
@@ -255,24 +268,40 @@ function render(next) {
 async function refresh() {
   const s = await api("/api/state");
   render(s);
-  // position tick even if no poll changes
-  if (s && s.playing && s.duration && !dragging) {
-    $("seek").value = Math.min(s.position + 0.5, s.duration);
-    $("timeCur").textContent = fmt(s.position + 1);
-  }
 }
 
-$("btnPlay").onclick = () => api("/api/play").then(render);
-$("btnPause").onclick = () => api("/api/pause").then(render);
+const btnPlay = $("btnPlay");
+function playToggle() {
+  // If connected, toggle play/pause; else join & play
+  if (state && state.connected) {
+    const paused = (state.status === "Paused") || (!state.playing && !state.stopped);
+    api(paused ? "/api/resume" : "/api/pause").then(render);
+  } else {
+    api("/api/play").then(render);
+  }
+}
+btnPlay.onclick = playToggle;
 $("btnNext").onclick = () => api("/api/skip").then(render);
 $("btnPrev").onclick = () => api("/api/prev").then(render);
-$("btnStop").onclick = () => api("/api/stop").then(render);
-$("btnBack60").onclick = () => api("/api/seekby?d=-60").then(render);
-$("btnBack15").onclick = () => api("/api/seekby?d=-15").then(render);
-$("btnFwd15").onclick = () => api("/api/seekby?d=15").then(render);
-$("btnFwd60").onclick = () => api("/api/seekby?d=60").then(render);
+$("btnLoop").onclick = () => api("/api/loop").then(render);
+$("btnShuffle").onclick = () => api("/api/shuffle").then(render);
 
-$("seek").addEventListener("input", () => { dragging = true; });
+$("connBadge").onclick = () => {
+  // If connected -> leave; else -> join (play)
+  if (state && state.connected) {
+    api("/api/disconnect").then(render);
+  } else {
+    api("/api/play").then(render);
+  }
+};
+
+$("seek").addEventListener("input", () => {
+  dragging = true;
+  const v = $("seek").value;
+  const max = $("seek").max;
+  $("timeCur").textContent = fmt(parseFloat(v));
+  $("seek").style.setProperty("--fill", (parseFloat(v) / (parseFloat(max) || 1000)) * 100 + "%");
+});
 $("seek").addEventListener("change", () => {
   const v = $("seek").value;
   dragging = false;
@@ -283,8 +312,6 @@ $("seek").addEventListener("blur", () => { dragging = false; });
 $("playlistSelect").addEventListener("change", () => {
   api("/api/playlist?name=" + encodeURIComponent($("playlistSelect").value)).then(render);
 });
-
-$("btnLoop").onclick = () => api("/api/loop").then(render);
 
 // Upload via drag & drop or click
 const drop = $("drop");

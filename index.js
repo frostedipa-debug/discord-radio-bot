@@ -102,6 +102,7 @@ function getState() {
     playlists: listPlaylists(),
     tracks: playlist,
     loop: loopEnabled,
+    shuffle: shuffleEnabled,
     position: isPlaying ? currentPosition : (seekPos || 0),
     duration: trackDuration,
     connected: !!connection,
@@ -127,6 +128,9 @@ http.createServer(async (req, res) => {
   if (url === "/api/skip") { if (connection && playlist.length > 0) { manualAction = true; player.stop(); currentIndex++; if (currentIndex >= playlist.length) currentIndex = 0; resetTrackState(); playTrack(); } return serveJSON(res, getState()); }
   if (url === "/api/prev") { if (connection && playlist.length > 0) { manualAction = true; player.stop(); currentIndex -= 2; if (currentIndex < -1) currentIndex = playlist.length - 2; resetTrackState(); playTrack(); } return serveJSON(res, getState()); }
   if (url === "/api/loop") { loopEnabled = !loopEnabled; return serveJSON(res, getState()); }
+  if (url === "/api/shuffle") { shuffleEnabled = !shuffleEnabled; if (shuffleEnabled && playlist.length > 0) { currentIndex = Math.floor(Math.random() * playlist.length); if (isPlaying && connection) { manualAction = true; player.stop(); resetTrackState(); playTrack(); } } return serveJSON(res, getState()); }
+  if (url === "/api/disconnect") { disconnect(); return serveJSON(res, getState()); }
+  if (url === "/api/join") { ensurePlay(); return serveJSON(res, getState()); }
 
   if (url === "/api/seek") {
     const t = parseFloat(u.searchParams.get("t"));
@@ -237,6 +241,20 @@ function attachAndPlay(channel, guild) {
   } catch (e) { console.error("[web attach]", e.message); }
 }
 
+function disconnect() {
+  try {
+    if (player) { manualAction = true; player.stop(); }
+    isPlaying = false;
+    isStopped = true;
+    resetTrackState();
+    if (connection) {
+      connection.destroy();
+      connection = null;
+    }
+    console.log("[web] disconnected from voice channel");
+  } catch (e) { console.error("[web disconnect]", e.message); }
+}
+
 function getConfig() {
   try {
     return require("./config.json");
@@ -268,6 +286,7 @@ let isPlaying = false;
 let isStopped = false;
 let manualAction = false;
 let loopEnabled = false;
+let shuffleEnabled = false;
 let currentPlaylistName = DEFAULT_PLAYLIST;
 let seekPos = 0;
 let trackDuration = null;
@@ -395,7 +414,13 @@ player.on(AudioPlayerStatus.Idle, () => {
   if (manualAction) { manualAction = false; resetTrackState(); return; }
   if (isStopped) { resetTrackState(); return; }
   resetTrackState();
+  if (isStopped) { return; }
   if (loopEnabled) {
+    playTrack();
+  } else if (shuffleEnabled && playlist.length > 0) {
+    let ni;
+    do { ni = Math.floor(Math.random() * playlist.length); } while (ni === currentIndex && playlist.length > 1);
+    currentIndex = ni;
     playTrack();
   } else {
     currentIndex++;
