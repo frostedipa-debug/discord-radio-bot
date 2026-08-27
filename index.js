@@ -163,6 +163,22 @@ http.createServer(async (req, res) => {
     return serveJSON(res, { ok: true, message: `Created playlist "${name}"`, playlists: listPlaylists() });
   }
 
+  if (url === "/api/deleteplaylist") {
+    const name = (u.searchParams.get("name") || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!name || name === DEFAULT_PLAYLIST) return serveStatus(res, 400, "Cannot delete this playlist");
+    const dir = getPlaylistDir(name);
+    if (!fs.existsSync(dir)) return serveStatus(res, 400, "Playlist not found");
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (currentPlaylistName === name) {
+      currentPlaylistName = DEFAULT_PLAYLIST;
+      playlist = loadPlaylist();
+      currentIndex = 0;
+      resetTrackState();
+      if (connection && isPlaying) { manualAction = true; player.stop(); playTrack(); }
+    }
+    return serveJSON(res, { ok: true, message: `Deleted "${name}"`, playlists: listPlaylists() });
+  }
+
   if (url === "/api/playlist") {
     const name = (u.searchParams.get("name") || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
     const dir = getPlaylistDir(name);
@@ -716,8 +732,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   if (commandName === "panel") {
     playlist = loadPlaylist();
+    const webUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? "https://" + process.env.RAILWAY_PUBLIC_DOMAIN
+      : "https://discord-radio-bot-production.up.railway.app";
+    const components = buildComponents();
+    const webBtn = new ButtonBuilder().setLabel("🌐 Web Panel").setStyle(ButtonStyle.Link).setURL(webUrl);
+    // add the web button to a row that has room (< 5 buttons), preferring index 1
+    let added = false;
+    for (let i = 0; i < components.length && !added; i++) {
+      if (components[i].components.length < 5) {
+        components[i] = new ActionRowBuilder().addComponents(...components[i].components, webBtn);
+        added = true;
+      }
+    }
+    if (!added && components.length < 5) {
+      components.push(new ActionRowBuilder().addComponents(webBtn));
+    }
     return interaction.reply({
-      embeds: [buildPanelEmbed()], components: buildComponents(), flags: 64,
+      embeds: [buildPanelEmbed()], components, flags: 64,
     });
   }
 
