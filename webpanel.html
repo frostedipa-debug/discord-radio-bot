@@ -212,7 +212,6 @@ let dragging = false;
 let fakeBase = 0;
 let fakeTime = 0;
 let fakeDur = 0;
-let prevTrackKey = "";
 
 function fmt(s) {
   if (s == null || isNaN(s)) return "--:--";
@@ -230,10 +229,9 @@ async function api(path, opts) {
 
 function currentPos() {
   const playing = state && state.playing && state.status !== "Paused";
-  if (!playing) return fakeBase;
+  if (!playing || fakeDur < 1) return fakeBase;
   const elapsed = (Date.now() - fakeTime) / 1000;
-  const max = fakeDur > 1 ? fakeDur : 999999;
-  return Math.min(fakeBase + elapsed, max);
+  return Math.min(fakeBase + elapsed, fakeDur);
 }
 
 function paintSeek() {
@@ -279,15 +277,9 @@ function render(next) {
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
 
-  const trackKey = (s.currentTrack || "") + "|" + (s.trackIndex || 0);
-  const serverPos = dur > 0 ? Math.min(s.position || 0, dur) : (s.position || 0);
-  const drift = Math.abs(serverPos - currentPos());
-
-  if (trackKey !== prevTrackKey || drift > 3) {
-    fakeBase = serverPos;
-    fakeTime = Date.now();
-  }
-  prevTrackKey = trackKey;
+  const serverPos = dur > 0 ? Math.min(s.position || 0, dur) : 0;
+  fakeBase = serverPos;
+  fakeTime = Date.now();
   if (!dragging) paintSeek();
 
   // Playlist select

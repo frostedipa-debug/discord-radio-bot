@@ -103,7 +103,7 @@ function getState() {
     tracks: playlist,
     loop: loopEnabled,
     shuffle: shuffleEnabled,
-    position: isPlaying ? currentPosition : (seekPos || 0),
+    position: isPlaying ? Math.min(currentPosition, trackDuration || Infinity) : (seekPos || 0),
     duration: trackDuration,
     connected: !!connection,
     uptime: process.uptime().toFixed(0),
@@ -369,6 +369,25 @@ function startPositionTimer() {
   positionTimer = setInterval(() => {
     if (isPlaying && !isStopped) {
       currentPosition += 1;
+      if (trackDuration && currentPosition >= trackDuration) {
+        stopPositionTimer();
+        manualAction = false;
+        if (loopEnabled) {
+          seekPos = 0;
+          playTrack();
+        } else if (shuffleEnabled && playlist.length > 0) {
+          let ni;
+          do { ni = Math.floor(Math.random() * playlist.length); } while (ni === currentIndex && playlist.length > 1);
+          currentIndex = ni;
+          seekPos = 0;
+          playTrack();
+        } else {
+          currentIndex++;
+          if (currentIndex >= playlist.length) currentIndex = 0;
+          seekPos = 0;
+          playTrack();
+        }
+      }
     }
   }, 1000);
 }
