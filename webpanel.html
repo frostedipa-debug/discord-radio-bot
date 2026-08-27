@@ -212,6 +212,8 @@ let dragging = false;
 let basePos = 0;
 let baseTime = 0;
 let knownDur = 0;
+let lastTrackKey = null;
+let wasPlaying = false;
 
 function fmt(s) {
   if (s == null || isNaN(s)) return "--:--";
@@ -279,9 +281,22 @@ function render(next) {
   $("timeDur").textContent = fmt(dur);
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
-  // reset base when the server gives a fresh reading or the track changed
-  basePos = dur > 0 ? Math.min(s.position, dur) : s.position;
-  baseTime = Date.now();
+
+  // Fake smooth progress: grow 1s per 1s while playing.
+  // Rebase only on track change, or when (re)starting/pausing, not each poll.
+  const trackKey = (s.currentTrack || "") + "|" + (s.trackIndex || 0);
+  const playingNow = !!(s.playing && s.status !== "Paused");
+  if (trackKey !== lastTrackKey) {
+    lastTrackKey = trackKey;
+    basePos = dur > 0 ? Math.min(s.position, dur) : 0;
+    baseTime = Date.now();
+  } else if (playingNow && !wasPlaying) {
+    baseTime = Date.now();
+  } else if (!playingNow && wasPlaying) {
+    basePos = dur > 0 ? Math.min(s.position, dur) : basePos;
+    baseTime = Date.now();
+  }
+  wasPlaying = playingNow;
   paintSeek();
 
   // Playlist select
