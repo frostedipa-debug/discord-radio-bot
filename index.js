@@ -35,7 +35,7 @@ let webPanelHtml = "";
 try { webPanelHtml = fs.readFileSync(path.join(__dirname, "webpanel.html"), "utf-8"); }
 catch (e) { console.error("[web] cannot read webpanel.html:", e.message); }
 
-const BODY_LIMIT = 64 * 1024 * 1024;
+const BODY_LIMIT = 256 * 1024 * 1024;
 
 function serveJSON(res, obj) {
   try {
