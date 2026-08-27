@@ -1,0 +1,8 @@
+[deploy]
+start_command = "node index.js"
+healthcheck_path = "/api/state"
+healthcheck_timeout_seconds = 180
+healthcheck_timeout_interval = 30
+
+[[deploy.networking]]
+port = 8080
