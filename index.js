@@ -37,6 +37,11 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
 });
 
+setInterval(() => {
+  const data = Math.random().toString(36).substring(2, 10);
+  console.log(`[keepalive] heartbeat ${data}`);
+}, 60_000);
+
 let connection = null;
 let player = null;
 let playlist = [];
