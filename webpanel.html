@@ -209,9 +209,6 @@
 const $ = (id) => document.getElementById(id);
 let state = null;
 let dragging = false;
-let fakeBase = 0;
-let fakeTime = 0;
-let fakeDur = 0;
 
 function fmt(s) {
   if (s == null || isNaN(s)) return "--:--";
@@ -225,26 +222,6 @@ async function api(path, opts) {
     const r = await fetch(path, opts);
     return await r.json();
   } catch (e) { return null; }
-}
-
-function currentPos() {
-  const playing = state && state.playing && state.status !== "Paused";
-  if (!playing || fakeDur < 1) return fakeBase;
-  const elapsed = (Date.now() - fakeTime) / 1000;
-  return Math.min(fakeBase + elapsed, fakeDur);
-}
-
-function paintSeek() {
-  const seek = $("seek");
-  const max = parseFloat(seek.max) || 1000;
-  const pos = Math.min(currentPos(), max);
-  seek.value = pos;
-  $("timeCur").textContent = fmt(pos);
-  seek.style.setProperty("--fill", ((pos / max) * 100) + "%");
-}
-
-function paintLoop() {
-  if (!dragging) paintSeek();
 }
 
 function render(next) {
@@ -272,15 +249,15 @@ function render(next) {
   $("btnShuffle").classList.toggle("active", !!s.shuffle);
 
   const dur = s.duration || 0;
-  fakeDur = dur;
   $("timeDur").textContent = fmt(dur);
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
-
-  const serverPos = dur > 0 ? Math.min(s.position || 0, dur) : 0;
-  fakeBase = serverPos;
-  fakeTime = Date.now();
-  if (!dragging) paintSeek();
+  const pos = dur > 0 ? Math.min(s.position || 0, dur) : 0;
+  if (!dragging) {
+    seek.value = pos;
+    $("timeCur").textContent = fmt(pos);
+    seek.style.setProperty("--fill", ((pos / (parseFloat(seek.max) || 1000)) * 100) + "%");
+  }
 
   // Playlist select
   const ps = $("playlistSelect");
@@ -364,8 +341,6 @@ $("seek").addEventListener("input", () => {
 $("seek").addEventListener("change", () => {
   const v = parseFloat($("seek").value);
   dragging = false;
-  fakeBase = v;
-  fakeTime = Date.now();
   api("/api/seek?t=" + v).then(render);
 });
 $("seek").addEventListener("blur", () => { dragging = false; });
@@ -421,8 +396,6 @@ drop.addEventListener("drop", (e) => {
 render({}); // initial defaults
 refresh();
 setInterval(refresh, 1000);
-setTimeout(() => location.reload(), 1000);
-setInterval(paintLoop, 200);
 </script>
 </body>
 </html>
