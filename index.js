@@ -371,7 +371,7 @@ function startPositionTimer() {
       currentPosition += 1;
       if (trackDuration && currentPosition >= trackDuration) {
         stopPositionTimer();
-        manualAction = false;
+        manualAction = true;
         if (loopEnabled) {
           seekPos = 0;
           playTrack();
