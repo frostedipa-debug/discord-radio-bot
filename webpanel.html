@@ -209,8 +209,9 @@
 const $ = (id) => document.getElementById(id);
 let state = null;
 let dragging = false;
-let localPos = 0;
-let localTick = null;
+let basePos = 0;
+let baseTime = 0;
+let knownDur = 0;
 
 function fmt(s) {
   if (s == null || isNaN(s)) return "--:--";
@@ -226,12 +227,27 @@ async function api(path, opts) {
   } catch (e) { return null; }
 }
 
+function currentPos() {
+  const playing = !!(state && state.playing && state.status !== "Paused");
+  let p = basePos;
+  if (playing) {
+    p += (Date.now() - baseTime) / 1000;
+    if (knownDur > 1) p = Math.min(p, knownDur);
+  }
+  return Math.max(0, p);
+}
+
 function paintSeek() {
   const seek = $("seek");
-  const max = seek.max;
-  seek.value = localPos;
-  $("timeCur").textContent = fmt(localPos);
-  seek.style.setProperty("--fill", ((parseFloat(max) || 1000) ? (localPos / (parseFloat(max) || 1000)) * 100 : 0) + "%");
+  const max = parseFloat(seek.max) || 1000;
+  const pos = Math.min(currentPos(), max);
+  seek.value = pos;
+  $("timeCur").textContent = fmt(pos);
+  seek.style.setProperty("--fill", (max ? (pos / max) * 100 : 0) + "%");
+}
+
+function paintLoop() {
+  if (!dragging) paintSeek();
 }
 
 function render(next) {
@@ -259,23 +275,14 @@ function render(next) {
   $("btnShuffle").classList.toggle("active", !!s.shuffle);
 
   const dur = s.duration || 0;
+  knownDur = dur;
   $("timeDur").textContent = fmt(dur);
   const seek = $("seek");
   seek.max = dur > 0 ? dur : 1000;
-  localPos = dur > 0 ? Math.min(s.position, dur) : 0;
-  const playing = !!s.playing;
-  if (playing && !localTick) {
-    localTick = setInterval(() => {
-      if (dragging) return;
-      if (s.playing && s.status !== "Paused") {
-        localPos = Math.min(localPos + 1, s.duration || localPos + 1);
-        paintSeek();
-      }
-    }, 1000);
-  } else if (!playing && localTick) {
-    clearInterval(localTick); localTick = null;
-  }
-  if (!dragging) paintSeek();
+  // reset base when the server gives a fresh reading or the track changed
+  basePos = dur > 0 ? Math.min(s.position, dur) : s.position;
+  baseTime = Date.now();
+  paintSeek();
 
   // Playlist select
   const ps = $("playlistSelect");
@@ -414,6 +421,7 @@ drop.addEventListener("drop", (e) => {
 render({}); // initial defaults
 refresh();
 setInterval(refresh, 2500);
+setInterval(paintLoop, 200);
 </script>
 </body>
 </html>
