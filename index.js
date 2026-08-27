@@ -30,12 +30,212 @@ const path = require("path");
 process.env.FFMPEG_PATH = require("ffmpeg-static");
 
 const PORT = process.env.PORT || 3000;
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, uptime: process.uptime().toFixed(0) }));
-  })
-  .listen(PORT, () => console.log(`[web] keep-alive server on port ${PORT}`));
+
+let webPanelHtml = "";
+try { webPanelHtml = fs.readFileSync(path.join(__dirname, "webpanel.html"), "utf-8"); }
+catch (e) { console.error("[web] cannot read webpanel.html:", e.message); }
+
+const BODY_LIMIT = 64 * 1024 * 1024;
+
+function serveJSON(res, obj) {
+  try {
+    res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+    res.end(JSON.stringify(obj));
+  } catch { /* ignore */ }
+}
+
+function serveStatus(res, code, msg) {
+  res.writeHead(code, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ ok: code >= 200 && code < 300, message: msg }));
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > BODY_LIMIT) { reject(new Error("Payload too large")); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+function parseMultipart(body, ctype) {
+  const boundaryMatch = ctype.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  const boundary = boundaryMatch ? (boundaryMatch[1] || boundaryMatch[2]).trim() : null;
+  if (!boundary) return { data: body, filename: null };
+  const delim = Buffer.from("--" + boundary);
+  const idx = body.indexOf(delim);
+  if (idx === -1) return { data: body, filename: null };
+  const start = idx + delim.length;
+  const nextDelim = Buffer.from("\r\n--" + boundary);
+  const endIdx = body.indexOf(nextDelim, start);
+  if (endIdx === -1) return { data: body, filename: null };
+  const part = body.slice(start, endIdx);
+  const headEnd = part.indexOf("\r\n\r\n");
+  const head = headEnd === -1 ? "" : part.slice(0, headEnd).toString("utf-8");
+  const data = headEnd === -1 ? Buffer.alloc(0) : part.slice(headEnd + 4);
+  if (data.length >= 2 && data[data.length - 2] === 13 && data[data.length - 1] === 10) {
+    return { data: data.slice(0, data.length - 2), filename: extractFilename(head) };
+  }
+  return { data, filename: extractFilename(head) };
+}
+
+function extractFilename(head) {
+  const m = head.match(/filename="?([^";]+)"?/i);
+  return m ? m[1].replace(/[^a-zA-Z0-9 ._()-]/g, "_") : null;
+}
+
+function getState() {
+  return {
+    ok: true,
+    playing: isPlaying,
+    stopped: isStopped,
+    status: isPlaying ? "Playing" : isStopped ? "Stopped" : "Idle",
+    currentTrack: playlist.length > 0 ? (playlist[currentIndex] || null) : null,
+    trackIndex: playlist.length > 0 ? currentIndex : -1,
+    trackCount: playlist.length,
+    playlist: currentPlaylistName,
+    playlists: listPlaylists(),
+    tracks: playlist,
+    loop: loopEnabled,
+    position: isPlaying ? currentPosition : (seekPos || 0),
+    duration: trackDuration,
+    connected: !!connection,
+    uptime: process.uptime().toFixed(0),
+  };
+}
+
+http.createServer(async (req, res) => {
+  const url = req.url.split("?")[0];
+  const u = new URL(req.url, "http://localhost");
+
+  if (url === "/" || url === "/index.html") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    return res.end(webPanelHtml);
+  }
+
+  if (url === "/api/state") return serveJSON(res, getState());
+
+  if (url === "/api/play") { ensurePlay(); return serveJSON(res, getState()); }
+  if (url === "/api/pause") { if (player && player.state.status === AudioPlayerStatus.Playing) { player.pause(); isPlaying = false; } return serveJSON(res, getState()); }
+  if (url === "/api/resume") { if (player && player.state.status === AudioPlayerStatus.Paused) { player.unpause(); isPlaying = true; isStopped = false; } return serveJSON(res, getState()); }
+  if (url === "/api/stop") { if (player) { manualAction = true; player.stop(); isPlaying = false; isStopped = true; } return serveJSON(res, getState()); }
+  if (url === "/api/skip") { if (connection && playlist.length > 0) { manualAction = true; player.stop(); currentIndex++; if (currentIndex >= playlist.length) currentIndex = 0; resetTrackState(); playTrack(); } return serveJSON(res, getState()); }
+  if (url === "/api/prev") { if (connection && playlist.length > 0) { manualAction = true; player.stop(); currentIndex -= 2; if (currentIndex < -1) currentIndex = playlist.length - 2; resetTrackState(); playTrack(); } return serveJSON(res, getState()); }
+  if (url === "/api/loop") { loopEnabled = !loopEnabled; return serveJSON(res, getState()); }
+
+  if (url === "/api/seek") {
+    const t = parseFloat(u.searchParams.get("t"));
+    if (isNaN(t)) return serveStatus(res, 400, "Invalid t");
+    seekTo(t);
+    return serveJSON(res, getState());
+  }
+  if (url === "/api/seekby") {
+    const d = parseFloat(u.searchParams.get("d"));
+    if (isNaN(d)) return serveStatus(res, 400, "Invalid d");
+    seekBy(d);
+    return serveJSON(res, getState());
+  }
+
+  if (url === "/api/select") {
+    const idx = parseInt(u.searchParams.get("i"), 10);
+    playlist = loadPlaylist();
+    if (isNaN(idx) || idx < 0 || idx >= playlist.length) return serveStatus(res, 400, "Invalid index");
+    if (!connection) return serveStatus(res, 400, "Not connected. Press play first.");
+    manualAction = true; player.stop(); currentIndex = idx; resetTrackState(); playTrack();
+    return serveJSON(res, getState());
+  }
+
+  if (url === "/api/playlist") {
+    const name = (u.searchParams.get("name") || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    const dir = getPlaylistDir(name);
+    if (!fs.existsSync(dir)) return serveStatus(res, 400, "Playlist not found");
+    currentPlaylistName = name; playlist = loadPlaylist(); currentIndex = 0; resetTrackState();
+    if (connection && isPlaying) { manualAction = true; player.stop(); playTrack(); }
+    return serveJSON(res, getState());
+  }
+
+  if (req.method === "POST" && url === "/api/upload") {
+    try {
+      const body = await readBody(req);
+      const target = (u.searchParams.get("playlist") || currentPlaylistName).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+      const dir = getPlaylistDir(target);
+      if (!fs.existsSync(dir)) return serveStatus(res, 400, "Playlist not found");
+      const ctype = req.headers["content-type"] || "";
+      let filename = "upload" + Date.now() + ".mp3";
+      let data = body;
+      if (ctype.includes("multipart/form-data")) {
+        const parsed = parseMultipart(body, ctype);
+        if (parsed.filename) filename = parsed.filename;
+        data = parsed.data;
+      } else {
+        const cd = req.headers["content-disposition"] || "";
+        const nm = cd.match(/filename="?([^";]+)"?/i);
+        if (nm && /\.(mp3|mp4|mkv|webm|ogg|wav)$/i.test(nm[1])) filename = nm[1].replace(/[^a-zA-Z0-9 ._()-]/g, "_");
+      }
+      if (!/\.(mp3|mp4|mkv|webm|ogg|wav)$/i.test(filename)) return serveStatus(res, 400, "Unsupported file type");
+      fs.writeFileSync(path.join(dir, filename), data);
+      playlist = loadPlaylist();
+      return serveJSON(res, { ok: true, message: `Uploaded ${filename} to "${target}"` });
+    } catch (err) {
+      return serveStatus(res, 500, err.message);
+    }
+  }
+
+  return serveStatus(res, 404, "Not found");
+}).listen(PORT, () => console.log(`[web] keep-alive server on port ${PORT}`));
+
+function ensurePlay() {
+  const run = (target) => {
+    try {
+      const g = client.guilds.cache.first();
+      if (!g) { console.error("[web] no guild"); return; }
+      let ch;
+      const cached = client.channels.cache.get(target);
+      if (cached && cached.isVoiceBased()) ch = cached;
+      if (!ch) { client.channels.fetch(target).then((c) => { if (!c || !c.isVoiceBased()) return; attachAndPlay(c, g); }).catch(() => {}); return; }
+      attachAndPlay(ch, g);
+    } catch (e) { console.error("[web play]", e.message); }
+  };
+  if (connection) {
+    if (player.state.status === AudioPlayerStatus.Paused) { player.unpause(); isPlaying = true; isStopped = false; }
+    else if (player.state.status === AudioPlayerStatus.Idle && playlist.length > 0) { isStopped = false; resetTrackState(); playTrack(); }
+    else if (playlist.length === 0) { playlist = loadPlaylist(); }
+    return;
+  }
+  playlist = loadPlaylist();
+  if (playlist.length === 0) return;
+  run(VOICE_CHANNEL_ID);
+}
+
+function attachAndPlay(channel, guild) {
+  try {
+    connection = joinVoiceChannel({
+      channelId: channel.id, guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: false,
+    });
+    connection.on(VoiceConnectionStatus.Disconnected, async () => {
+      try {
+        await Promise.race([
+          entersState(connection, VoiceConnectionStatus.Signalling, 5_000),
+          entersState(connection, VoiceConnectionStatus.Connecting, 5_000),
+        ]);
+      } catch { connection = null; isPlaying = false; }
+    });
+    entersState(connection, VoiceConnectionStatus.Ready, 30_000).then(() => {
+      connection.subscribe(player);
+      currentIndex = 0;
+      isStopped = false;
+      isPlaying = true;
+      resetTrackState();
+      playTrack();
+    }).catch(() => { connection = null; });
+  } catch (e) { console.error("[web attach]", e.message); }
+}
 
 function getConfig() {
   try {
@@ -69,6 +269,10 @@ let isStopped = false;
 let manualAction = false;
 let loopEnabled = false;
 let currentPlaylistName = DEFAULT_PLAYLIST;
+let seekPos = 0;
+let trackDuration = null;
+let currentPosition = 0;
+let positionTimer = null;
 
 function getPlaylistDir(name) {
   return path.join(PLAYLISTS_DIR, name || currentPlaylistName);
@@ -85,8 +289,10 @@ function listPlaylists() {
   return fs.readdirSync(PLAYLISTS_DIR).filter((item) => fs.statSync(path.join(PLAYLISTS_DIR, item)).isDirectory());
 }
 
-function createMediaResource(filePath) {
-  const ffmpeg = spawn(process.env.FFMPEG_PATH, [
+function createMediaResource(filePath, seekSec) {
+  const args = [];
+  if (seekSec) args.push("-ss", String(seekSec));
+  args.push(
     "-i", filePath,
     "-f", "ogg",
     "-c:a", "libopus",
@@ -95,8 +301,42 @@ function createMediaResource(filePath) {
     "-b:a", "128k",
     "-vn",
     "pipe:1",
-  ], { stdio: ["ignore", "pipe", "ignore"] });
+  );
+  const ffmpeg = spawn(process.env.FFMPEG_PATH, args, { stdio: ["ignore", "pipe", "ignore"] });
   return createAudioResource(ffmpeg.stdout, { inputType: StreamType.OggOpus });
+}
+
+function getMediaDuration(filePath) {
+  return new Promise((resolve) => {
+    const ff = spawn(process.env.FFMPEG_PATH, ["-i", filePath], { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    ff.stderr.on("data", (d) => { err += d.toString(); });
+    ff.on("close", () => {
+      const m = err.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+      resolve(m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) : null);
+    });
+  });
+}
+
+function startPositionTimer() {
+  stopPositionTimer();
+  currentPosition = seekPos || 0;
+  positionTimer = setInterval(() => {
+    if (isPlaying && !isStopped && player && player.state.status === AudioPlayerStatus.Playing) {
+      currentPosition += 1;
+    }
+  }, 1000);
+}
+
+function stopPositionTimer() {
+  if (positionTimer) { clearInterval(positionTimer); positionTimer = null; }
+}
+
+function resetTrackState() {
+  stopPositionTimer();
+  seekPos = 0;
+  currentPosition = 0;
+  trackDuration = null;
 }
 
 function playTrack() {
@@ -106,17 +346,44 @@ function playTrack() {
 
   const file = playlist[currentIndex];
   const filePath = path.join(getPlaylistDir(currentPlaylistName), file);
-  console.log(`[PLAY] ${file} (${currentIndex + 1}/${playlist.length})`);
+  console.log(`[PLAY] ${file} (${currentIndex + 1}/${playlist.length})` + (seekPos ? ` from ${seekPos}s` : ""));
 
   try {
-    const resource = createMediaResource(filePath);
+    trackDuration = null;
+    getMediaDuration(filePath).then((d) => { trackDuration = d; });
+    const resource = createMediaResource(filePath, seekPos || null);
     resource.playStream.on("error", (e) => console.error("[STREAM ERROR]", e.message));
     player.play(resource);
     isPlaying = true;
     isStopped = false;
+    startPositionTimer();
   } catch (err) {
     console.error("[PLAY ERROR]", err.message);
   }
+}
+
+function seekTo(target) {
+  if (!connection || playlist.length === 0) return;
+  if (trackDuration && target >= trackDuration) {
+    manualAction = true;
+    player.stop();
+    resetTrackState();
+    currentIndex++;
+    if (currentIndex >= playlist.length) currentIndex = 0;
+    playTrack();
+    return;
+  }
+  if (target < 0) target = 0;
+  manualAction = true;
+  player.stop();
+  seekPos = target;
+  playTrack();
+}
+
+function seekBy(delta) {
+  if (!connection || playlist.length === 0) return;
+  const base = isPlaying ? currentPosition : 0;
+  seekTo(Math.max(0, base + delta));
 }
 
 player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
@@ -125,8 +392,9 @@ player.on(AudioPlayerStatus.Playing, () => console.log("[PLAYER] PLAYING"));
 
 player.on(AudioPlayerStatus.Idle, () => {
   console.log("[PLAYER] IDLE");
-  if (manualAction) { manualAction = false; return; }
-  if (isStopped) return;
+  if (manualAction) { manualAction = false; resetTrackState(); return; }
+  if (isStopped) { resetTrackState(); return; }
+  resetTrackState();
   if (loopEnabled) {
     playTrack();
   } else {
@@ -137,12 +405,23 @@ player.on(AudioPlayerStatus.Idle, () => {
 
 player.on("error", (error) => {
   console.error("[PLAYER ERROR]", error.message);
+  resetTrackState();
   currentIndex++;
   playTrack();
 });
 
+function fmtTime(sec) {
+  if (sec == null || isNaN(sec)) return "--:--";
+  sec = Math.floor(sec);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function buildPanelEmbed() {
   const current = playlist.length > 0 ? (playlist[currentIndex] || "None") : "No tracks";
+  const posFmt = fmtTime(isPlaying ? currentPosition : seekPos);
+  const durFmt = fmtTime(trackDuration);
   return new EmbedBuilder()
     .setColor(isPlaying ? 0x1DB954 : 0x99AAB5)
     .setTitle("Radio Control Panel")
@@ -150,6 +429,7 @@ function buildPanelEmbed() {
       `**Status:** ${isPlaying ? "Playing" : isStopped ? "Stopped" : "Idle"}\n` +
       `**Now playing:** ${current}\n` +
       `**Track:** ${playlist.length > 0 ? currentIndex + 1 : 0}/${playlist.length}\n` +
+      (trackDuration ? `**Position:** ${posFmt} / ${durFmt}\n` : "") +
       `**Loop:** ${loopEnabled ? "ON" : "OFF"}\n` +
       `**Playlist:** ${currentPlaylistName}`
     );
@@ -163,6 +443,12 @@ function buildComponents() {
     new ButtonBuilder().setCustomId("btn_play").setLabel("▶").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId("btn_pause").setLabel("⏸").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("btn_skip").setLabel("▶▶").setStyle(ButtonStyle.Secondary),
+  ));
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("btn_back15").setLabel("◀ 15s").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("btn_back60").setLabel("◀ 60s").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("btn_fwd60").setLabel("60s ▶").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("btn_fwd15").setLabel("15s ▶").setStyle(ButtonStyle.Secondary),
   ));
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("btn_loop").setLabel(loopEnabled ? "🔁 Loop: ON" : "🔁 Loop: OFF").setStyle(loopEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
@@ -275,6 +561,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           currentIndex = 0;
           isStopped = false;
           isPlaying = true;
+          resetTrackState();
           playTrack();
         } catch (err) {
           connection = null;
@@ -286,6 +573,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         isStopped = false;
       } else if (player.state.status === AudioPlayerStatus.Idle && playlist.length > 0) {
         isStopped = false;
+        resetTrackState();
         playTrack();
       }
       return updatePanel(interaction);
@@ -315,6 +603,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         player.stop();
         currentIndex++;
         if (currentIndex >= playlist.length) currentIndex = 0;
+        resetTrackState();
         playTrack();
       }
       return updatePanel(interaction);
@@ -326,6 +615,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         player.stop();
         currentIndex -= 2;
         if (currentIndex < -1) currentIndex = playlist.length - 2;
+        resetTrackState();
         playTrack();
       }
       return updatePanel(interaction);
@@ -335,6 +625,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       loopEnabled = !loopEnabled;
       return updatePanel(interaction);
     }
+
+    if (id === "btn_back15") { seekBy(-15); return updatePanel(interaction); }
+    if (id === "btn_back60") { seekBy(-60); return updatePanel(interaction); }
+    if (id === "btn_fwd60") { seekBy(60); return updatePanel(interaction); }
+    if (id === "btn_fwd15") { seekBy(15); return updatePanel(interaction); }
 
     if (id === "btn_panel") {
       playlist = loadPlaylist();
@@ -357,6 +652,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       manualAction = true;
       player.stop();
       currentIndex = selected;
+      resetTrackState();
       playTrack();
       return updatePanel(interaction);
     }
@@ -368,6 +664,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (connection && isPlaying) {
         manualAction = true;
         player.stop();
+        resetTrackState();
         playTrack();
       }
       return updatePanel(interaction);

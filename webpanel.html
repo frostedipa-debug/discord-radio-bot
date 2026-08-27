@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Radio Web Panel</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #181b25;
+    --panel2: #1f2330;
+    --border: #2a2f3d;
+    --text: #e6e9f0;
+    --muted: #8b92a5;
+    --accent: #1db954;
+    --accent-dim: #17a044;
+    --danger: #e74c3c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #1b2438 0%, var(--bg) 55%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  header h1 { font-size: 20px; margin: 0; display: flex; align-items: center; gap: 10px; }
+  .badge {
+    font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 600;
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .badge.on { color: #0f1117; background: var(--accent); border-color: var(--accent); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .now {
+    display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px;
+  }
+  .cover {
+    width: 52px; height: 52px; border-radius: 10px; flex: 0 0 auto;
+    background: linear-gradient(135deg, var(--accent), #0e7a3c);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; overflow: hidden;
+  }
+  .now .meta { min-width: 0; }
+  .now .track { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now .sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .prog { margin: 6px 0 4px; }
+  input[type=range] {
+    width: 100%; appearance: none; -webkit-appearance: none; height: 6px;
+    border-radius: 4px; background: var(--panel2); outline: none; margin: 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: none; box-shadow: 0 0 0 4px rgba(29,185,84,.18);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 15px; height: 15px; border-radius: 50%; background: var(--accent);
+    cursor: pointer; border: none;
+  }
+  .times { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .controls { display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .btn {
+    border: none; cursor: pointer; border-radius: 12px;
+    width: 46px; height: 46px; display: inline-flex; align-items: center; justify-content: center;
+    background: var(--panel2); color: var(--text); transition: transform .08s, background .15s, opacity .15s;
+  }
+  .btn:hover { background: #262c3c; }
+  .btn:active { transform: scale(.92); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.wide { width: auto; padding: 0 14px; gap: 6px; font-size: 13px; font-weight: 600; }
+  .btn svg { width: 22px; height: 22px; }
+  .btn.wide svg { width: 17px; height: 17px; }
+  .btn.primary { background: var(--accent); color: #0f1117; }
+  .btn.primary:hover { background: var(--accent-dim); }
+  .btn.danger { background: var(--danger); color: #fff; }
+  .seek-row { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
+  h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 22px 0 10px; }
+  .selects { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 12px; font-size: 14px; flex: 1; min-width: 0; cursor: pointer;
+  }
+  .tracklist { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow-y: auto; }
+  .tracklist li {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 12px; border-radius: 10px; cursor: pointer; font-size: 14px;
+    border: 1px solid transparent;
+  }
+  .tracklist li:hover { background: var(--panel2); }
+  .tracklist li.active { background: rgba(29,185,84,.12); border-color: rgba(29,185,84,.4); color: var(--accent); font-weight: 600; }
+  .tracklist li .tname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tracklist li .tid { color: var(--muted); font-size: 12px; flex: 0 0 auto; }
+  .tracklist li.empty { cursor: default; color: var(--muted); text-align: center; justify-content: center; }
+  .drop {
+    border: 2px dashed var(--border); border-radius: 12px; padding: 22px; text-align: center;
+    color: var(--muted); font-size: 14px; cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .drop:hover, .drop.dragover { border-color: var(--accent); color: var(--accent); }
+  .drop input { display: none; }
+  .upload-note { margin-top: 8px; font-size: 12px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1db954" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+      </svg>
+      Radio Panel
+    </h1>
+    <span class="badge" id="connBadge">Connecting...</span>
+  </header>
+
+  <div class="panel">
+    <div class="now">
+      <div class="cover" id="cover">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="track" id="trackName">No track</div>
+        <div class="sub" id="playlistLabel">Playlist: default</div>
+      </div>
+    </div>
+
+    <div class="prog">
+      <input type="range" id="seek" min="0" max="1000" value="0" step="1">
+    </div>
+    <div class="times">
+      <span id="timeCur">0:00</span>
+      <span id="timeDur">--:--</span>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="btnPrev" title="Previous track">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+      </button>
+      <button class="btn" id="btnStop" title="Stop">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
+      <button class="btn primary" id="btnPlay" title="Play">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="btn" id="btnPause" title="Pause">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </button>
+      <button class="btn" id="btnNext" title="Next track">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+      </button>
+      <button class="btn" id="btnLoop" title="Toggle loop" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+      </button>
+    </div>
+
+    <div class="seek-row">
+      <button class="btn wide" id="btnBack60">-60s</button>
+      <button class="btn wide" id="btnBack15">-15s</button>
+      <button class="btn wide" id="btnFwd15">+15s</button>
+      <button class="btn wide" id="btnFwd60">+60s</button>
+    </div>
+  </div>
+
+  <h3>Playlist &amp; Tracks</h3>
+  <div class="selects">
+    <select id="playlistSelect" title="Playlist"></select>
+  </div>
+  <ul class="tracklist" id="tracklist"></ul>
+
+  <h3>Upload Audio</h3>
+  <div class="drop" id="drop">
+    <input type="file" id="file" multiple accept=".mp3,.mp4,.mkv,.webm,.ogg,.wav">
+    Drag &amp; drop audio files here, or click to browse
+  </div>
+  <div class="upload-note" id="uploadNote"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+let dragging = false;
+
+function fmt(s) {
+  if (s == null || isNaN(s)) return "--:--";
+  s = Math.floor(s);
+  const m = Math.floor(s / 60), r = s % 60;
+  return m + ":" + String(r).padStart(2, "0");
+}
+
+async function api(path, opts) {
+  try {
+    const r = await fetch(path, opts);
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+function render(next) {
+  const s = next || state;
+  if (!s) return;
+  state = s;
+
+  const badge = $("connBadge");
+  badge.textContent = s.connected ? "Connected" : "Standby";
+  badge.className = "badge" + (s.connected ? " on" : "");
+
+  $("trackName").textContent = s.currentTrack || "No track";
+  $("playlistLabel").textContent = "Playlist: " + s.playlist;
+
+  const dur = s.duration || 0;
+  $("timeCur").textContent = fmt(s.position);
+  $("timeDur").textContent = fmt(dur);
+  const seek = $("seek");
+  seek.max = dur > 0 ? dur : 1000;
+  if (!dragging) seek.value = dur > 0 ? Math.min(s.position, dur) : 0;
+
+  // Playlist select
+  const ps = $("playlistSelect");
+  if (ps.options.length !== (s.playlists || []).length || ps.value !== s.playlist) {
+    ps.innerHTML = "";
+    (s.playlists || []).forEach((p) => {
+      const o = document.createElement("option");
+      o.value = p; o.textContent = p;
+      if (p === s.playlist) o.selected = true;
+      ps.appendChild(o);
+    });
+  }
+
+  // Track list
+  const tl = $("tracklist");
+  tl.innerHTML = "";
+  if (!s.tracks || s.tracks.length === 0) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "No tracks yet. Upload or use /addurl in Discord.";
+    tl.appendChild(li);
+  } else {
+    s.tracks.forEach((t, i) => {
+      const li = document.createElement("li");
+      if (i === s.trackIndex) li.className = "active";
+      const tn = document.createElement("span");
+      tn.className = "tname"; tn.textContent = t;
+      const ti = document.createElement("span");
+      ti.className = "tid"; ti.textContent = (i + 1) + "/" + s.tracks.length;
+      li.appendChild(tn); li.appendChild(ti);
+      li.addEventListener("click", () => {
+        api("/api/select?i=" + i).then(render);
+      });
+      tl.appendChild(li);
+    });
+  }
+}
+
+async function refresh() {
+  const s = await api("/api/state");
+  render(s);
+  // position tick even if no poll changes
+  if (s && s.playing && s.duration && !dragging) {
+    $("seek").value = Math.min(s.position + 0.5, s.duration);
+    $("timeCur").textContent = fmt(s.position + 1);
+  }
+}
+
+$("btnPlay").onclick = () => api("/api/play").then(render);
+$("btnPause").onclick = () => api("/api/pause").then(render);
+$("btnNext").onclick = () => api("/api/skip").then(render);
+$("btnPrev").onclick = () => api("/api/prev").then(render);
+$("btnStop").onclick = () => api("/api/stop").then(render);
+$("btnBack60").onclick = () => api("/api/seekby?d=-60").then(render);
+$("btnBack15").onclick = () => api("/api/seekby?d=-15").then(render);
+$("btnFwd15").onclick = () => api("/api/seekby?d=15").then(render);
+$("btnFwd60").onclick = () => api("/api/seekby?d=60").then(render);
+
+$("seek").addEventListener("input", () => { dragging = true; });
+$("seek").addEventListener("change", () => {
+  const v = $("seek").value;
+  dragging = false;
+  api("/api/seek?t=" + v).then(render);
+});
+$("seek").addEventListener("blur", () => { dragging = false; });
+
+$("playlistSelect").addEventListener("change", () => {
+  api("/api/playlist?name=" + encodeURIComponent($("playlistSelect").value)).then(render);
+});
+
+$("btnLoop").onclick = () => api("/api/loop").then(render);
+
+// Upload via drag & drop or click
+const drop = $("drop");
+const fileInput = $("file");
+function upload(files) {
+  const f = files[0];
+  if (!f) return;
+  const fd = new FormData();
+  fd.append("file", f);
+  const note = $("uploadNote");
+  note.textContent = "Uploading " + f.name + "...";
+  fetch("/api/upload?playlist=" + encodeURIComponent($("playlistSelect").value || "default"), {
+    method: "POST", body: fd,
+  }).then((r) => r.json()).then((res) => {
+    note.textContent = res.message || "Upload finished";
+    refresh();
+  }).catch(() => { note.textContent = "Upload failed"; });
+}
+drop.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => upload(fileInput.files));
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("dragover"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault(); drop.classList.remove("dragover");
+  if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
+});
+
+render({}); // initial defaults
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>
